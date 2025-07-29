@@ -1,0 +1,252 @@
+Okay, can you just do me a favor and be sure to keep good notes as I am sure we will have to move to a new window for the next phase and when we do, I would like you to know exactly where you left off and be able to pick up seamlessly.  With that my friend, here is Phase 2. Let's top Phase 1 as we should always strive to be better right :) 
+---
+
+## Chunk 2: Authentication, API Layer & Security Framework
+
+**Context**: You are continuing development of the Metcalf & Metcalf legal platform. Chunk 1 has been completed successfully with the core plugin structure, multi-database architecture, and custom post types. You must now build upon this foundation.
+
+**Your Role**: You are an expert WordPress developer with deep knowledge of REST API development, JWT authentication, and HIPAA-compliant security practices. You write production-ready, well-documented code.
+
+**Existing Code Structure** (from Chunk 1):
+```
+metcalf-legal-system/
+├── classes/
+│   └── class-database-abstraction.php
+├── cpt-registration.php
+└── metcalf-legal-system.php
+```
+
+**Critical Requirements**:
+1. All code must follow WordPress coding standards
+2. Use the existing `Metcalf_Database_Abstraction` class for ALL database operations
+3. Every database query MUST use prepared statements
+4. All classes must include comprehensive PHPDoc blocks
+5. Error handling must be robust with proper logging
+6. Code must be defensive - assume all input is malicious
+
+### Task 1: User Authentication & Role Management
+
+**File to create**: `includes/class-auth-manager.php`
+
+**Specific Implementation Requirements**:
+
+```php
+class Metcalf_Auth_Manager {
+    // Must include these exact methods:
+    // - register_custom_roles() - Create the three roles with specific capabilities
+    // - generate_jwt_token($user_id) - Return array with 'token' and 'refresh_token'
+    // - validate_jwt_token($token) - Return user_id or false
+    // - setup_two_factor($user_id) - Return array with 'secret' and 'qr_code_url'
+    // - verify_two_factor($user_id, $code) - Return boolean
+}
+```
+
+**Database Tables to Create** (in activation hook):
+```sql
+-- Add to wp_metcalf_portal database
+CREATE TABLE `auth_tokens` (
+    `token_id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id` BIGINT(20) UNSIGNED NOT NULL,
+    `token_hash` VARCHAR(255) NOT NULL,
+    `token_type` ENUM('access', 'refresh') NOT NULL,
+    `expires_at` TIMESTAMP NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `last_used_at` TIMESTAMP NULL,
+    PRIMARY KEY (`token_id`),
+    KEY `user_id` (`user_id`),
+    KEY `token_hash` (`token_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+**Capabilities Mapping**:
+- `client_portal_user`: Can only view own cases, messages, documents
+- `law_firm_staff`: Can view/edit all cases, send messages, upload documents
+- `law_firm_admin`: All capabilities plus user management, analytics access
+
+### Task 2: REST API Endpoints
+
+**File to create**: `includes/class-api-endpoints.php`
+
+**Implementation Pattern** (follow exactly):
+```php
+class Metcalf_API_Endpoints {
+    
+    public function __construct() {
+        add_action('rest_api_init', array($this, 'register_routes'));
+    }
+    
+    public function register_routes() {
+        // Portal endpoints
+        register_rest_route('metcalf/v1', '/portal/client/profile', array(
+            array(
+                'methods' => 'GET',
+                'callback' => array($this, 'get_client_profile'),
+                'permission_callback' => array($this, 'check_client_permissions'),
+            ),
+        ));
+        // ... continue for all endpoints
+    }
+    
+    // Each endpoint method must:
+    // 1. Validate JWT token from Authorization header
+    // 2. Check role-based permissions
+    // 3. Sanitize all inputs
+    // 4. Use Metcalf_Database_Abstraction for queries
+    // 5. Return WP_REST_Response with proper status codes
+}
+```
+
+**Response Format** (all endpoints must follow):
+```json
+{
+    "success": true,
+    "data": {
+        // endpoint specific data
+    },
+    "meta": {
+        "timestamp": "2024-01-01T00:00:00Z",
+        "version": "1.0"
+    }
+}
+```
+
+### Task 3: Security Middleware
+
+**File to create**: `includes/class-security-middleware.php`
+
+**Critical Security Functions**:
+```php
+class Metcalf_Security_Middleware {
+    
+    // Rate limiting using WordPress transients
+    public function check_rate_limit($identifier) {
+        $key = 'rate_limit_' . md5($identifier);
+        $attempts = get_transient($key);
+        // Implement sliding window rate limiting
+    }
+    
+    // Audit logging - MUST log these events:
+    // - All authentication attempts (success/failure)
+    // - All API requests with user, endpoint, timestamp
+    // - All data modifications with before/after values
+    // - All document access with full details
+    
+    // Encryption methods
+    public function encrypt_data($data) {
+        // Use OpenSSL with AES-256-CBC
+        // Keys stored in wp-config.php constants
+    }
+}
+```
+
+**Audit Log Table**:
+```sql
+-- Add to wp_metcalf_analytics database
+CREATE TABLE `audit_logs` (
+    `log_id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id` BIGINT(20) UNSIGNED NULL,
+    `action` VARCHAR(100) NOT NULL,
+    `resource_type` VARCHAR(50) NOT NULL,
+    `resource_id` BIGINT(20) UNSIGNED NULL,
+    `ip_address` VARCHAR(45) NOT NULL,
+    `user_agent` TEXT,
+    `request_data` JSON,
+    `response_code` INT(3),
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`log_id`),
+    KEY `user_id` (`user_id`),
+    KEY `created_at` (`created_at`),
+    KEY `action` (`action`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Task 4: Session Management
+
+**File to create**: `includes/class-session-manager.php`
+
+**Session Security Requirements**:
+- Generate cryptographically secure session IDs
+- Implement session fingerprinting: `hash('sha256', $_SERVER['HTTP_USER_AGENT'] . $_SERVER['REMOTE_ADDR'])`
+- Store sessions in database, not PHP sessions
+- Implement concurrent session limits per role
+
+### Task 5: API Documentation
+
+**File to create**: `api-documentation.md`
+
+**Must Include**:
+1. Authentication flow diagram (in Markdown)
+2. Every endpoint with:
+   - HTTP method and path
+   - Required headers
+   - Request body schema
+   - Response examples (success and error)
+   - Required permissions
+3. Error codes table
+4. Rate limiting rules
+5. Example cURL commands
+
+### Code Quality Requirements
+
+**Every PHP file must**:
+1. Start with security check: `if (!defined('ABSPATH')) { exit; }`
+2. Include comprehensive PHPDoc for every method
+3. Use type hints where possible (PHP 7.4+)
+4. Handle all possible error cases
+5. Log errors using `error_log()` with "Metcalf Legal System: " prefix
+
+**Example Method Structure**:
+```php
+/**
+ * Validates JWT token from request header
+ * 
+ * @param WP_REST_Request $request The REST request object
+ * @return int|WP_Error User ID on success, WP_Error on failure
+ * 
+ * @since 1.0.0
+ */
+private function validate_request_token($request) {
+    $auth_header = $request->get_header('authorization');
+    
+    if (empty($auth_header)) {
+        return new WP_Error(
+            'missing_auth_header',
+            __('Authorization header is required', 'metcalf-legal-system'),
+            array('status' => 401)
+        );
+    }
+    
+    // Continue with validation...
+}
+```
+
+### Testing Checklist
+
+Your code will be tested for:
+- [ ] SQL injection attempts on all endpoints
+- [ ] XSS attempts in all input fields
+- [ ] JWT token manipulation
+- [ ] Rate limiting bypass attempts
+- [ ] Unauthorized access to other users' data
+- [ ] Proper audit log generation
+- [ ] Encryption/decryption functionality
+
+### Deliverables
+
+1. Complete, working PHP files as specified
+2. All database tables created in activation hook
+3. Comprehensive API documentation
+4. No placeholder code - everything must be production-ready
+
+**Remember**: This is a HIPAA-compliant legal platform. Security is paramount. Every line of code must be written with security in mind. When in doubt, choose the more secure option.
+
+---
+
+This prompt format should help DeepSeek produce higher quality code by:
+1. Providing exact code structure expectations
+2. Including specific implementation patterns to follow
+3. Giving concrete examples of required code style
+4. Defining clear success criteria
+5. Emphasizing security requirements throughout
+6. Providing database schemas upfront
+7. Including a testing checklist for self-validation
